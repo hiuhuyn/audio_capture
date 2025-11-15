@@ -1,6 +1,6 @@
+import 'package:desktop_audio_capture/model/input_device_type.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import 'package:desktop_audio_capture/mic/mic_audio_capture.dart';
 import 'providers/audio_capture_provider.dart';
 import 'providers/settings_provider.dart';
 import 'widgets/audio_data_display.dart';
@@ -70,6 +70,7 @@ class AudioCaptureHome extends StatelessWidget {
 
     // Show loading
     if (!context.mounted) return;
+    final navigator = Navigator.of(context);
     showDialog(
       context: context,
       barrierDismissible: false,
@@ -83,93 +84,106 @@ class AudioCaptureHome extends StatelessWidget {
       // Get available devices
       final devices = await micCapture.getAvailableInputDevices();
 
-      if (!context.mounted) return;
-      Navigator.of(context).pop(); // Close loading
+      // Close loading dialog
+      if (context.mounted && navigator.canPop()) {
+        navigator.pop();
+      }
 
       // Show devices dialog
-      if (!context.mounted) return;
-      showDialog(
-        context: context,
-        builder: (context) => AlertDialog(
-          title: const Text('Available Input Devices'),
-          content: SizedBox(
-            width: double.maxFinite,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'Has Input Device: ${hasDevice ? "Yes" : "No"}',
-                  style: const TextStyle(fontWeight: FontWeight.bold),
-                ),
-                const SizedBox(height: 16),
-                if (devices.isEmpty)
-                  const Text('No devices found')
-                else
-                  Flexible(
-                    child: ListView.builder(
-                      shrinkWrap: true,
-                      itemCount: devices.length,
-                      itemBuilder: (context, index) {
-                        final device = devices[index];
-                        return Card(
-                          margin: const EdgeInsets.only(bottom: 8),
-                          child: ListTile(
-                            leading: Icon(
-                              device.type == InputDeviceType.bluetooth
-                                  ? Icons.bluetooth
-                                  : device.type == InputDeviceType.builtIn
-                                      ? Icons.phone_android
-                                      : Icons.usb,
-                            ),
-                            title: Text(
-                              device.name,
-                              style: TextStyle(
-                                fontWeight: device.isDefault
-                                    ? FontWeight.bold
-                                    : FontWeight.normal,
-                              ),
-                            ),
-                            subtitle: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text('Type: ${device.type}'),
-                                Text('Channels: ${device.channelCount}'),
-                                if (device.isDefault)
-                                  const Text(
-                                    'Default Device',
-                                    style: TextStyle(
-                                      color: Colors.green,
-                                      fontWeight: FontWeight.bold,
-                                    ),
-                                  ),
-                              ],
-                            ),
-                            isThreeLine: true,
-                          ),
-                        );
-                      },
-                    ),
-                  ),
-              ],
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(context).pop(),
-              child: const Text('Close'),
-            ),
-          ],
-        ),
-      );
+      if (context.mounted) {
+        _showDevicesDialog(context, hasDevice, devices);
+      }
     } catch (e) {
-      if (!context.mounted) return;
-      Navigator.of(context).pop(); // Close loading
-      if (!context.mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: SelectableText('Error: $e')),
-      );
+      if (context.mounted && navigator.canPop()) {
+        navigator.pop(); // Close loading
+      }
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: SelectableText('Error: $e')),
+        );
+      }
     }
+  }
+
+  void _showDevicesDialog(
+    BuildContext context,
+    bool hasDevice,
+    List<InputDevice> devices,
+  ) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Available Input Devices'),
+        content: SizedBox(
+          width: double.maxFinite,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Has Input Device: ${hasDevice ? "Yes" : "No"}',
+                style: const TextStyle(fontWeight: FontWeight.bold),
+              ),
+              const SizedBox(height: 16),
+              if (devices.isEmpty)
+                const Text('No devices found')
+              else
+                Flexible(
+                  child: ListView.builder(
+                    shrinkWrap: true,
+                    itemCount: devices.length,
+                    itemBuilder: (context, index) {
+                      final device = devices[index];
+                      return Card(
+                        margin: const EdgeInsets.only(bottom: 8),
+                        child: ListTile(
+                          leading: Icon(
+                            device.type == InputDeviceType.bluetooth
+                                ? Icons.bluetooth
+                                : device.type == InputDeviceType.builtIn
+                                    ? Icons.phone_android
+                                    : Icons.usb,
+                          ),
+                          title: Text(
+                            device.name,
+                            style: TextStyle(
+                              fontWeight: device.isDefault
+                                  ? FontWeight.bold
+                                  : FontWeight.normal,
+                            ),
+                          ),
+                          subtitle: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text('Type: ${device.type}'),
+                              Text('Channels: ${device.channelCount}'),
+                              if (device.isDefault)
+                                const Text(
+                                  'Default Device',
+                                  style: TextStyle(
+                                    color: Colors.green,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                            ],
+                          ),
+                          isThreeLine: true,
+                        ),
+                      );
+                    },
+                  ),
+                ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('Close'),
+          ),
+        ],
+      ),
+    );
   }
 
   @override
@@ -331,24 +345,24 @@ class AudioCaptureHome extends StatelessWidget {
                 // Info
                 Card(
                   color: Colors.blue.shade50,
-                  child: Padding(
-                    padding: const EdgeInsets.all(16.0),
+                  child: const Padding(
+                    padding: EdgeInsets.all(16.0),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        const Text(
+                        Text(
                           'Info',
                           style: TextStyle(
                             fontSize: 16,
                             fontWeight: FontWeight.bold,
                           ),
                         ),
-                        const SizedBox(height: 8),
-                        const Text(
+                        SizedBox(height: 8),
+                        Text(
                           '• You can enable both microphone and system audio simultaneously',
                           style: TextStyle(fontSize: 12),
                         ),
-                        const Text(
+                        Text(
                           '• Tap the settings icon to configure audio parameters',
                           style: TextStyle(fontSize: 12),
                         ),

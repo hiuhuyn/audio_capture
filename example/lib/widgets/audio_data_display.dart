@@ -228,7 +228,7 @@ class _AudioDataDisplayState extends State<AudioDataDisplay> {
               children: [
                 _buildStatItem('Total', _formatBytes(_totalBytes)),
                 _buildStatItem('Speed', '${_formatBytes(_bytesPerSecond)}/s'),
-                _buildStatItem('Samples', '${(_totalBytes / 2).toStringAsFixed(0)}'),
+                _buildStatItem('Samples', (_totalBytes / 2).toStringAsFixed(0)),
               ],
             ),
           ],

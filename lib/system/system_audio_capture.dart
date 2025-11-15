@@ -4,7 +4,6 @@ import 'package:desktop_audio_capture/audio_capture.dart';
 import 'package:flutter/services.dart';
 
 export 'package:desktop_audio_capture/config/system_adudio_config.dart';
-// DecibelData is exported from audio_capture.dart
 
 enum _SystemAudioMethod {
   startCapture,

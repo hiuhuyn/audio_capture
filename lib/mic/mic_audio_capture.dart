@@ -3,36 +3,6 @@ import 'dart:async';
 import 'package:desktop_audio_capture/audio_capture.dart';
 import 'package:flutter/services.dart';
 export 'package:desktop_audio_capture/config/mic_audio_config.dart';
-export 'package:desktop_audio_capture/mic/input_device.dart';
-
-/// Decibel data from audio capture
-class DecibelData {
-  final double decibel; // -120 to 0 dB
-  final double timestamp; // Unix timestamp
-
-  const DecibelData({
-    required this.decibel,
-    required this.timestamp,
-  });
-
-  factory DecibelData.fromMap(Map<String, dynamic> map) {
-    return DecibelData(
-      decibel: (map['decibel'] as num?)?.toDouble() ?? -120.0,
-      timestamp: (map['timestamp'] as num?)?.toDouble() ?? 
-          DateTime.now().millisecondsSinceEpoch / 1000.0,
-    );
-  }
-
-  Map<String, dynamic> toMap() {
-    return {
-      'decibel': decibel,
-      'timestamp': timestamp,
-    };
-  }
-
-  @override
-  String toString() => 'DecibelData(decibel: ${decibel.toStringAsFixed(1)} dB, timestamp: $timestamp)';
-}
 
 enum _MicAudioMethod {
   startCapture,

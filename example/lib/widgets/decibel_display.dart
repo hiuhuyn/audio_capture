@@ -80,7 +80,7 @@ class DecibelDisplay extends StatelessWidget {
             Row(
               children: [
                 Text(
-                  '${decibel.toStringAsFixed(1)}',
+                  decibel.toStringAsFixed(1),
                   style: Theme.of(context).textTheme.headlineMedium?.copyWith(
                         fontWeight: FontWeight.bold,
                         color: color,
