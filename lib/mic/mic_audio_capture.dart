@@ -26,7 +26,7 @@ class MicAudioCapture extends AudioCapture {
   );
 
   Stream<Uint8List>? _audioStream;
-  Stream<Map<String, dynamic>>? _statusStream;
+  Stream<MicStatus>? _statusStream;
   bool _isRecording = false;
 
   Stream<Uint8List>? get audioStream {
@@ -53,18 +53,18 @@ class MicAudioCapture extends AudioCapture {
   }
   
   /// Stream of microphone status updates
-  /// Returns a map with:
-  /// - `isActive`: bool - whether mic is currently active
-  /// - `deviceName`: String? - name of the microphone device (if available)
-  Stream<Map<String, dynamic>>? get statusStream {
+  /// Returns [MicStatus] containing:
+  /// - `isActive`: whether mic is currently active
+  /// - `deviceName`: name of the microphone device (if available)
+  Stream<MicStatus>? get statusStream {
     // Create status stream if not already created
     _statusStream ??= _statusStreamChannel.receiveBroadcastStream().map((
       dynamic event,
     ) {
       if (event is Map) {
-        return Map<String, dynamic>.from(event);
+        return MicStatus.fromMap(Map<String, dynamic>.from(event));
       }
-      return <String, dynamic>{'isActive': false};
+      return const MicStatus(isActive: false);
     });
     return _statusStream;
   }

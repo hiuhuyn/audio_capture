@@ -12,7 +12,7 @@ class AudioCaptureProvider with ChangeNotifier {
   // Mic state
   bool _micActive = false;
   String? _micDeviceName;
-  StreamSubscription<Map<String, dynamic>>? _micStatusSubscription;
+  StreamSubscription<MicStatus>? _micStatusSubscription;
   StreamSubscription<Uint8List>? _micAudioSubscription; // Keep reference to trigger onListen
   String? _micError;
 
@@ -66,8 +66,8 @@ class AudioCaptureProvider with ChangeNotifier {
         // Setup status listener BEFORE starting capture
         _micStatusSubscription?.cancel();
         _micStatusSubscription = _micCapture.statusStream?.listen((status) {
-          _micActive = status['isActive'] as bool? ?? false;
-          _micDeviceName = status['deviceName'] as String?;
+          _micActive = status.isActive;
+          _micDeviceName = status.deviceName;
           notifyListeners();
         });
 
