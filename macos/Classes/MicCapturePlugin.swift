@@ -120,14 +120,14 @@ class MicCapturePlugin: NSObject, FlutterPlugin {
                 self.audioEngine = nil
                 self.inputNode = nil
                 self.isCapturing = false
-                // Wait for cleanup to complete
-                Thread.sleep(forTimeInterval: 0.2)
+                // Wait for cleanup to complete (longer for Bluetooth devices)
+                Thread.sleep(forTimeInterval: 0.5)
             } else if self.isCapturing {
                 // If no engine but isCapturing is true, just reset state
                 print("⚠️ State mismatch: isCapturing=true but no engine, resetting...")
                 self.isCapturing = false
                 self.inputNode = nil
-                Thread.sleep(forTimeInterval: 0.2)
+                Thread.sleep(forTimeInterval: 0.5)
             }
             
             // Parse configuration from Flutter
@@ -186,6 +186,19 @@ class MicCapturePlugin: NSObject, FlutterPlugin {
                 return
             }
             
+            // Detect if device is Bluetooth and adjust wait times accordingly
+            let isBluetooth = self.isBluetoothDevice()
+            let initialWait: Double = isBluetooth ? 1.5 : 0.3
+            let postPrepareWait: Double = isBluetooth ? 0.8 : 0.3
+            
+            if isBluetooth {
+                print("🔵 Bluetooth device detected - using extended wait times")
+            }
+            
+            // Wait for device to be fully ready
+            print("⏳ Waiting \(initialWait)s for device to be ready...")
+            Thread.sleep(forTimeInterval: initialWait)
+            
             // Set input volume from config
             input.volume = self.inputVolume
             print("🎤 Input Format:")
@@ -240,31 +253,84 @@ class MicCapturePlugin: NSObject, FlutterPlugin {
             // Prepare the engine before starting
             engine.prepare()
             
-            // Start audio engine
-            do {
-                try engine.start()
-            } catch let startError {
-                let errorMsg = (startError as NSError).localizedDescription
-                print("❌ Error calling engine.start(): \(errorMsg)")
-                print("   Error domain: \((startError as NSError).domain)")
-                print("   Error code: \((startError as NSError).code)")
+            // Wait for engine initialization (longer for Bluetooth)
+            print("⏳ Waiting \(postPrepareWait)s after engine.prepare()...")
+            Thread.sleep(forTimeInterval: postPrepareWait)
+            
+            // Start audio engine with retry mechanism
+            // Bluetooth devices often need multiple attempts with longer waits
+            var startSuccess = false
+            var lastError: Error?
+            let maxRetries = isBluetooth ? 5 : 3  // More retries for Bluetooth
+            let retryDelays: [Double] = isBluetooth 
+                ? [0.5, 1.0, 1.5, 2.0, 2.5]  // Progressive delays for Bluetooth
+                : [0.3, 0.6, 1.0, 0, 0]      // Shorter delays for wired devices
+            
+            for attempt in 1...maxRetries {
+                do {
+                    try engine.start()
+                    startSuccess = true
+                    print("✅ Engine started successfully on attempt \(attempt)")
+                    break
+                } catch let startError {
+                    lastError = startError
+                    let errorMsg = (startError as NSError).localizedDescription
+                    let errorCode = (startError as NSError).code
+                    
+                    print("⚠️ Attempt \(attempt)/\(maxRetries) failed: \(errorMsg)")
+                    print("   Error domain: \((startError as NSError).domain)")
+                    print("   Error code: \(errorCode)")
+                    
+                    // Check if it's the specific Bluetooth error (-10877)
+                    if errorCode == -10877 {
+                        print("   This is kAudioUnitErr_CannotDoInCurrentContext - device not ready")
+                    }
+                    
+                    if attempt < maxRetries {
+                        // Use progressive wait times
+                        let waitTime = retryDelays[attempt - 1]
+                        let totalWaited = retryDelays.prefix(attempt).reduce(0, +) + initialWait + postPrepareWait
+                        print("   ⏳ Waiting \(waitTime)s before retry (total time: \(String(format: "%.1f", totalWaited + waitTime))s)...")
+                        Thread.sleep(forTimeInterval: waitTime)
+                    }
+                }
+            }
+            
+            // If all retries failed, clean up and return error
+            if !startSuccess {
+                let errorMsg = (lastError as NSError?)?.localizedDescription ?? "Unknown error"
+                let errorCode = (lastError as NSError?)?.code ?? 0
+                let totalTime = initialWait + postPrepareWait + retryDelays.prefix(maxRetries - 1).reduce(0, +)
+                print("❌ Failed to start engine after \(maxRetries) attempts")
+                print("   Total time waited: ~\(String(format: "%.1f", totalTime))s")
                 
                 // Clean up
                 engine.stop()
                 input.removeTap(onBus: 0)
                 
+                var detailedMessage = "Failed to start audio engine after \(maxRetries) attempts (\(String(format: "%.1f", totalTime))s): \(errorMsg)."
+                if errorCode == -10877 {
+                    if isBluetooth {
+                        detailedMessage += " Bluetooth device needs more time to connect. Please ensure the device is fully connected in System Settings, then try again."
+                    } else {
+                        detailedMessage += " Device is not ready yet. Please wait a moment and try again."
+                    }
+                } else {
+                    detailedMessage += " Device may need more time to connect."
+                }
+                
                 DispatchQueue.main.async { 
                     result(FlutterError(
                         code: "ENGINE_START_FAILED",
-                        message: "Failed to start audio engine: \(errorMsg)",
-                        details: nil
+                        message: detailedMessage,
+                        details: ["errorCode": errorCode, "totalRetries": maxRetries, "isBluetooth": isBluetooth]
                     ))
                 }
                 return
             }
             
             // Wait a bit to ensure engine has fully started
-            Thread.sleep(forTimeInterval: 0.1)
+            Thread.sleep(forTimeInterval: 0.2)
             
             // Check if engine is running
             guard engine.isRunning else {
@@ -411,6 +477,65 @@ class MicCapturePlugin: NSObject, FlutterPlugin {
         }
         
         return deviceName ?? "Default Microphone"
+    }
+    
+    // Check if device is Bluetooth by name or transport type
+    private func isBluetoothDevice() -> Bool {
+        // Get default input device ID
+        var deviceID: AudioDeviceID = 0
+        var propertySize = UInt32(MemoryLayout<AudioDeviceID>.size)
+        
+        var propertyAddress = AudioObjectPropertyAddress(
+            mSelector: kAudioHardwarePropertyDefaultInputDevice,
+            mScope: kAudioObjectPropertyScopeGlobal,
+            mElement: kAudioObjectPropertyElementMain
+        )
+        
+        let status = AudioObjectGetPropertyData(
+            AudioObjectID(kAudioObjectSystemObject),
+            &propertyAddress,
+            0,
+            nil,
+            &propertySize,
+            &deviceID
+        )
+        
+        guard status == noErr else {
+            return false
+        }
+        
+        // Check transport type
+        propertyAddress.mSelector = kAudioDevicePropertyTransportType
+        propertySize = UInt32(MemoryLayout<UInt32>.size)
+        var transportType: UInt32 = 0
+        
+        let transportStatus = AudioObjectGetPropertyData(
+            deviceID,
+            &propertyAddress,
+            0,
+            nil,
+            &propertySize,
+            &transportType
+        )
+        
+        // kAudioDeviceTransportTypeBluetooth = 'blue' = 0x626c7565
+        if transportStatus == noErr && transportType == 0x626c7565 {
+            print("🔵 Detected Bluetooth device via transport type")
+            return true
+        }
+        
+        // Fallback: check device name for Bluetooth keywords
+        if let deviceName = getCurrentDeviceName()?.lowercased() {
+            let bluetoothKeywords = ["bluetooth", "airpods", "beats", "jabra", "sony", "bose", "jbl"]
+            for keyword in bluetoothKeywords {
+                if deviceName.contains(keyword) {
+                    print("🔵 Detected Bluetooth device via name: \(deviceName)")
+                    return true
+                }
+            }
+        }
+        
+        return false
     }
     
     // Send status update to Flutter
@@ -576,4 +701,3 @@ class StatusStreamHandler: NSObject, FlutterStreamHandler {
         return nil
     }
 }
-
