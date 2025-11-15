@@ -18,11 +18,53 @@ class MicAudioCapture extends AudioCapture {
   static const EventChannel _audioStreamChannel = EventChannel(
     'com.mic_audio_transcriber/mic_stream',
   );
+  static const EventChannel _statusStreamChannel = EventChannel(
+    'com.mic_audio_transcriber/mic_status',
+  );
 
   Stream<Uint8List>? _audioStream;
+  Stream<Map<String, dynamic>>? _statusStream;
   bool _isRecording = false;
 
-  Stream<Uint8List>? get audioStream => _audioStream;
+  Stream<Uint8List>? get audioStream {
+    // Return existing stream if available
+    if (_audioStream != null) {
+      return _audioStream;
+    }
+    // If not recording, return null
+    if (!_isRecording) {
+      return null;
+    }
+    // Create stream lazily if recording but stream not created yet
+    _audioStream = _audioStreamChannel.receiveBroadcastStream().map((
+      dynamic event,
+    ) {
+      if (event is Uint8List) {
+        return event;
+      } else if (event is List<int>) {
+        return Uint8List.fromList(event);
+      }
+      throw Exception('Unexpected audio data type: ${event.runtimeType}');
+    });
+    return _audioStream;
+  }
+  
+  /// Stream of microphone status updates
+  /// Returns a map with:
+  /// - `isActive`: bool - whether mic is currently active
+  /// - `deviceName`: String? - name of the microphone device (if available)
+  Stream<Map<String, dynamic>>? get statusStream {
+    // Create status stream if not already created
+    _statusStream ??= _statusStreamChannel.receiveBroadcastStream().map((
+      dynamic event,
+    ) {
+      if (event is Map) {
+        return Map<String, dynamic>.from(event);
+      }
+      return <String, dynamic>{'isActive': false};
+    });
+    return _statusStream;
+  }
 
   MicAudioConfig _config = MicAudioConfig();
 
@@ -49,16 +91,24 @@ class MicAudioCapture extends AudioCapture {
     try {
       await requestPermissions();
 
-      final started = await _channel.invokeMethod<bool>(
-        _MicAudioMethod.startCapture.name,
-        _config.toMap(),
-      );
+      try {
+        final result = await _channel.invokeMethod<dynamic>(
+          _MicAudioMethod.startCapture.name,
+          _config.toMap(),
+        );
 
-      if (started != true) {
-        throw Exception('Failed to start microphone capture');
+        if (result is! bool || result != true) {
+          final errorMsg = result is String 
+              ? result 
+              : 'Failed to start microphone capture. Returned: $result';
+          throw Exception(errorMsg);
+        }
+      } on PlatformException catch (e) {
+        throw Exception('Failed to start microphone capture: ${e.message ?? e.code}');
       }
 
-      // Listen to audio stream
+      // Create audio stream
+      // Note: Stream will be subscribed by listeners, which triggers onListen on native side
       _audioStream = _audioStreamChannel.receiveBroadcastStream().map((
         dynamic event,
       ) {
@@ -69,6 +119,8 @@ class MicAudioCapture extends AudioCapture {
         }
         throw Exception('Unexpected audio data type: ${event.runtimeType}');
       });
+
+      // Status stream is created lazily via getter, no need to recreate here
 
       _isRecording = true;
     } catch (e) {
@@ -90,10 +142,11 @@ class MicAudioCapture extends AudioCapture {
 
       _isRecording = false;
       _audioStream = null;
+      _statusStream = null;
     } catch (e) {
       rethrow;
     }
-  }
+  } 
 
   Future<bool> isCapturing() async {
     return _isRecording;

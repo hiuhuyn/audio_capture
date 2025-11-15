@@ -28,5 +28,9 @@
 	<string>MainMenu</string>
 	<key>NSPrincipalClass</key>
 	<string>NSApplication</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>This app needs access to the microphone to capture audio.</string>
+	<key>NSScreenCaptureDescription</key>
+	<string>This app needs Screen Recording permission to capture system audio for real-time transcription</string>
 </dict>
 </plist>

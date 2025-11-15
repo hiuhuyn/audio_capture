@@ -1,15 +1,23 @@
 import Cocoa
 import FlutterMacOS
 import AVFoundation
+import CoreAudio
 
 class MicCapturePlugin: NSObject, FlutterPlugin {
     private var methodChannel: FlutterMethodChannel?
     private var eventChannel: FlutterEventChannel?
     private var eventSink: FlutterEventSink?
     
+    private var statusEventChannel: FlutterEventChannel?
+    var statusEventSink: FlutterEventSink?
+    
     private var audioEngine: AVAudioEngine?
     private var inputNode: AVAudioInputNode?
-    private var isCapturing = false
+    var isCapturing = false
+    var currentDeviceName: String?
+    
+    // Serial queue to ensure thread safety
+    private let audioQueue = DispatchQueue(label: "com.mic_audio_transcriber.audio_queue", qos: .userInitiated)
     
     // Audio format configuration (defaults, can be overridden by config)
     private var sampleRate: Double = 16000.0
@@ -38,6 +46,13 @@ class MicCapturePlugin: NSObject, FlutterPlugin {
         )
         instance.eventChannel = eventChannel
         eventChannel.setStreamHandler(instance)
+        
+        let statusEventChannel = FlutterEventChannel(
+            name: "com.mic_audio_transcriber/mic_status",
+            binaryMessenger: registrar.messenger
+        )
+        instance.statusEventChannel = statusEventChannel
+        statusEventChannel.setStreamHandler(StatusStreamHandler(plugin: instance))
     }
     
     func handle(_ call: FlutterMethodCall, result: @escaping FlutterResult) {
@@ -64,133 +79,358 @@ class MicCapturePlugin: NSObject, FlutterPlugin {
     }
     
     private func requestPermissions(result: @escaping FlutterResult) {
-        // On macOS, microphone permission is handled by the system
-        // macOS will prompt automatically when we try to access the microphone
-        // We can't check permission directly, so we return true and let
-        // the system handle the permission prompt when startCapture is called
-        result(true)
+        // Check permission status on macOS
+        let status = AVCaptureDevice.authorizationStatus(for: .audio)
+        
+        switch status {
+        case .authorized:
+            result(true)
+        case .notDetermined:
+            // Request permission
+            AVCaptureDevice.requestAccess(for: .audio) { granted in
+                DispatchQueue.main.async {
+                    result(granted)
+                }
+            }
+        case .denied, .restricted:
+            result(false)
+        @unknown default:
+            result(false)
+        }
     }
     
     private func startCapture(config: [String: Any]?, result: @escaping FlutterResult) {
-        guard !isCapturing else {
-            print("Already capturing")
-            result(false)
-            return
-        }
-        
-        // Parse configuration from Flutter
-        if let config = config {
-            if let sampleRateValue = config["sampleRate"] as? NSNumber {
-                sampleRate = sampleRateValue.doubleValue
-            }
-            if let channelsValue = config["channels"] as? NSNumber {
-                channels = channelsValue.uint32Value
-            }
-            if let bitDepthValue = config["bitDepth"] as? NSNumber {
-                bitDepth = bitDepthValue.uint32Value
-            }
-            if let gainBoostValue = config["gainBoost"] as? NSNumber {
-                gainBoost = gainBoostValue.floatValue
-                // Clamp gain boost to reasonable range (0.1 to 10.0)
-                gainBoost = max(0.1, min(10.0, gainBoost))
-            }
-            if let inputVolumeValue = config["inputVolume"] as? NSNumber {
-                inputVolume = inputVolumeValue.floatValue
-                // Clamp input volume to valid range (0.0 to 1.0)
-                inputVolume = max(0.0, min(1.0, inputVolume))
-            }
-        }
-        
-        do {
-            // Create audio engine
-            let engine = AVAudioEngine()
-            inputNode = engine.inputNode
-            
-            // Set input volume from config
-            inputNode!.volume = inputVolume
-            
-            // Get input format
-            let inputFormat = inputNode!.outputFormat(forBus: 0)
-            print("🎤 Input Format:")
-            print("  Sample Rate: \(inputFormat.sampleRate) Hz")
-            print("  Channels: \(inputFormat.channelCount)")
-            print("  Output Sample Rate: \(sampleRate) Hz")
-            print("  Output Channels: \(channels)")
-            print("  Gain Boost: \(gainBoost)x")
-            print("  Input Volume: \(inputVolume)")
-            
-            // Create output format (16kHz, mono, 16-bit PCM)
-            guard let outputFormat = AVAudioFormat(
-                commonFormat: .pcmFormatInt16,
-                sampleRate: sampleRate,
-                channels: channels,
-                interleaved: false
-            ) else {
-                print("Failed to create output format")
-                result(false)
+        // Ensure operations run on audio queue to avoid race conditions
+        audioQueue.async { [weak self] in
+            guard let self = self else {
+                DispatchQueue.main.async { result(false) }
                 return
             }
             
-            // Install tap on input node
-            // Note: installTap will fail if a tap already exists, so we ensure
-            // cleanup is done properly in stopCapture to prevent duplicate taps
+            // Always cleanup any existing engine first to ensure clean start
+            // This is important even if isCapturing is false (state might be out of sync)
+            if let existingEngine = self.audioEngine {
+                print("⚠️ Found existing engine, cleaning up first...")
+                if existingEngine.isRunning {
+                    existingEngine.stop()
+                }
+                if let existingInput = self.inputNode {
+                    existingInput.removeTap(onBus: 0)
+                }
+                self.audioEngine = nil
+                self.inputNode = nil
+                self.isCapturing = false
+                // Wait for cleanup to complete
+                Thread.sleep(forTimeInterval: 0.2)
+            } else if self.isCapturing {
+                // If no engine but isCapturing is true, just reset state
+                print("⚠️ State mismatch: isCapturing=true but no engine, resetting...")
+                self.isCapturing = false
+                self.inputNode = nil
+                Thread.sleep(forTimeInterval: 0.2)
+            }
+            
+            // Parse configuration from Flutter
+            if let config = config {
+                if let sampleRateValue = config["sampleRate"] as? NSNumber {
+                    self.sampleRate = sampleRateValue.doubleValue
+                }
+                if let channelsValue = config["channels"] as? NSNumber {
+                    self.channels = channelsValue.uint32Value
+                }
+                if let bitDepthValue = config["bitDepth"] as? NSNumber {
+                    self.bitDepth = bitDepthValue.uint32Value
+                }
+                if let gainBoostValue = config["gainBoost"] as? NSNumber {
+                    self.gainBoost = gainBoostValue.floatValue
+                    // Clamp gain boost to reasonable range (0.1 to 10.0)
+                    self.gainBoost = max(0.1, min(10.0, self.gainBoost))
+                }
+                if let inputVolumeValue = config["inputVolume"] as? NSNumber {
+                    self.inputVolume = inputVolumeValue.floatValue
+                    // Clamp input volume to valid range (0.0 to 1.0)
+                    self.inputVolume = max(0.0, min(1.0, self.inputVolume))
+                }
+            }
+            
+            // Check permission before starting
+            let permissionStatus = AVCaptureDevice.authorizationStatus(for: .audio)
+            if permissionStatus != .authorized {
+                print("❌ Microphone permission not granted. Status: \(permissionStatus.rawValue)")
+                DispatchQueue.main.async { 
+                    result(FlutterError(
+                        code: "PERMISSION_DENIED",
+                        message: "Microphone permission not granted. Status: \(permissionStatus.rawValue)",
+                        details: nil
+                    ))
+                }
+                return
+            }
+            
+            // Create new audio engine
+            // All cleanup should be done above
+            let engine = AVAudioEngine()
+            let input = engine.inputNode
+            
+            // Check if input is available
+            let inputFormat = input.outputFormat(forBus: 0)
+            if inputFormat.sampleRate == 0 {
+                print("❌ No input device available or input format invalid")
+                DispatchQueue.main.async { 
+                    result(FlutterError(
+                        code: "NO_INPUT_DEVICE",
+                        message: "No microphone input device available",
+                        details: nil
+                    ))
+                }
+                return
+            }
+            
+            // Set input volume from config
+            input.volume = self.inputVolume
+            print("🎤 Input Format:")
+            print("  Sample Rate: \(inputFormat.sampleRate) Hz")
+            print("  Channels: \(inputFormat.channelCount)")
+            print("  Format: \(inputFormat.commonFormat.rawValue)")
+            print("  Is Interleaved: \(inputFormat.isInterleaved)")
+            print("  Output Sample Rate: \(self.sampleRate) Hz")
+            print("  Output Channels: \(self.channels)")
+            print("  Gain Boost: \(self.gainBoost)x")
+            print("  Input Volume: \(self.inputVolume)")
+            
+            // Create output format
+            guard let outputFormat = AVAudioFormat(
+                commonFormat: .pcmFormatInt16,
+                sampleRate: self.sampleRate,
+                channels: self.channels,
+                interleaved: false
+            ) else {
+                print("❌ Failed to create output format")
+                DispatchQueue.main.async { 
+                    result(FlutterError(
+                        code: "FORMAT_ERROR",
+                        message: "Failed to create output format",
+                        details: nil
+                    ))
+                }
+                return
+            }
+            
+            // Connect input to main mixer FIRST with nil format
+            // This lets AVAudioEngine use the node's native format automatically
+            let mainMixer = engine.mainMixerNode
+            let output = engine.outputNode
+            engine.connect(input, to: mainMixer, format: nil)
+            
+            // Connect main mixer to output node to complete the audio graph
+            // This is required for the engine to start properly
+            engine.connect(mainMixer, to: output, format: nil)
+            
+            // Mute the output to prevent audio playback
+            mainMixer.outputVolume = 0.0
+            
+            // Install tap on input node AFTER connecting
+            // Use nil format to let AVAudioEngine automatically use the correct format
+            // This avoids format mismatch errors
             let bufferSize: AVAudioFrameCount = 4096
-            inputNode!.installTap(onBus: 0, bufferSize: bufferSize, format: inputFormat) { [weak self] (buffer, time) in
+            input.installTap(onBus: 0, bufferSize: bufferSize, format: nil) { [weak self] (buffer, time) in
                 self?.processAudioBuffer(buffer, outputFormat: outputFormat)
             }
             
+            // Prepare the engine before starting
+            engine.prepare()
+            
             // Start audio engine
-            try engine.start()
+            do {
+                try engine.start()
+            } catch let startError {
+                let errorMsg = (startError as NSError).localizedDescription
+                print("❌ Error calling engine.start(): \(errorMsg)")
+                print("   Error domain: \((startError as NSError).domain)")
+                print("   Error code: \((startError as NSError).code)")
+                
+                // Clean up
+                engine.stop()
+                input.removeTap(onBus: 0)
+                
+                DispatchQueue.main.async { 
+                    result(FlutterError(
+                        code: "ENGINE_START_FAILED",
+                        message: "Failed to start audio engine: \(errorMsg)",
+                        details: nil
+                    ))
+                }
+                return
+            }
             
-            audioEngine = engine
-            isCapturing = true
+            // Wait a bit to ensure engine has fully started
+            Thread.sleep(forTimeInterval: 0.1)
+            
+            // Check if engine is running
+            guard engine.isRunning else {
+                print("❌ Audio engine failed to start - isRunning: \(engine.isRunning)")
+                print("   Engine state after start attempt:")
+                print("   - isRunning: \(engine.isRunning)")
+                
+                // Try to get more error info
+                if let error = engine.outputNode.lastRenderTime {
+                    print("   - Last render time: \(error)")
+                }
+                
+                // Clean up
+                engine.stop()
+                input.removeTap(onBus: 0)
+                
+                DispatchQueue.main.async { 
+                    result(FlutterError(
+                        code: "ENGINE_START_FAILED",
+                        message: "Audio engine failed to start - engine is not running after start() call",
+                        details: nil
+                    ))
+                }
+                return
+            }
+            
+            // Get device name
+            let deviceName = self.getCurrentDeviceName()
+            self.currentDeviceName = deviceName
+            
+            // Update state
+            self.audioEngine = engine
+            self.inputNode = input
+            self.isCapturing = true
+            
+            // Send status update
+            self.sendStatusUpdate(isActive: true, deviceName: deviceName)
+            
             print("✅ Microphone capture started successfully!")
-            result(true)
-            
-        } catch {
-            print("❌ Error starting microphone capture: \(error)")
-            // Clean up on error
-            audioEngine = nil
-            inputNode = nil
-            isCapturing = false
-            result(false)
+            if let deviceName = deviceName {
+                print("  Device: \(deviceName)")
+            }
+            DispatchQueue.main.async { result(true) }
         }
     }
     
     private func stopCapture(result: @escaping FlutterResult) {
-        guard isCapturing, let engine = audioEngine, let input = inputNode else {
-            result(false)
+        audioQueue.async { [weak self] in
+            guard let self = self else {
+                DispatchQueue.main.async { result(false) }
+                return
+            }
+            
+            self.forceStop()
+            DispatchQueue.main.async { result(true) }
+        }
+    }
+    
+    // Force stop - complete cleanup, can be called from any thread
+    private func forceStop() {
+        guard isCapturing else {
+            // Even if not capturing, clean up any remaining engine
+            if let engine = audioEngine {
+                if engine.isRunning {
+                    engine.stop()
+                }
+                audioEngine = nil
+            }
+            if let input = inputNode {
+                input.removeTap(onBus: 0)
+                inputNode = nil
+            }
             return
         }
         
-        do {
-            // Remove tap
+        if let engine = audioEngine, let input = inputNode {
+            // Remove tap first (must be done before stopping)
             input.removeTap(onBus: 0)
             
             // Stop engine
-            engine.stop()
+            if engine.isRunning {
+                engine.stop()
+            }
             
-            // Clean up
-            audioEngine = nil
-            inputNode = nil
-            isCapturing = false
+            // Wait a bit to ensure engine has fully stopped
+            Thread.sleep(forTimeInterval: 0.1)
+        }
+        
+        // Clean up state
+        audioEngine = nil
+        inputNode = nil
+        isCapturing = false
+        currentDeviceName = nil
+        
+        // Send status update
+        sendStatusUpdate(isActive: false, deviceName: nil)
+        
+        print("✅ Microphone capture stopped")
+    }
+    
+    // Get current microphone device name using CoreAudio
+    private func getCurrentDeviceName() -> String? {
+        var deviceName: String? = nil
+        
+        // Get default input device ID
+        var deviceID: AudioDeviceID = 0
+        var propertySize = UInt32(MemoryLayout<AudioDeviceID>.size)
+        
+        var propertyAddress = AudioObjectPropertyAddress(
+            mSelector: kAudioHardwarePropertyDefaultInputDevice,
+            mScope: kAudioObjectPropertyScopeGlobal,
+            mElement: kAudioObjectPropertyElementMain
+        )
+        
+        let status = AudioObjectGetPropertyData(
+            AudioObjectID(kAudioObjectSystemObject),
+            &propertyAddress,
+            0,
+            nil,
+            &propertySize,
+            &deviceID
+        )
+        
+        guard status == noErr else {
+            return "Default Microphone"
+        }
+        
+        // Get device name
+        propertyAddress.mSelector = kAudioDevicePropertyDeviceNameCFString
+        propertySize = UInt32(MemoryLayout<CFString>.size)
+        var deviceNameCFString: Unmanaged<CFString>?
+        
+        let nameStatus = AudioObjectGetPropertyData(
+            deviceID,
+            &propertyAddress,
+            0,
+            nil,
+            &propertySize,
+            &deviceNameCFString
+        )
+        
+        if nameStatus == noErr, let cfString = deviceNameCFString?.takeRetainedValue() {
+            deviceName = cfString as String
+        }
+        
+        return deviceName ?? "Default Microphone"
+    }
+    
+    // Send status update to Flutter
+    private func sendStatusUpdate(isActive: Bool, deviceName: String?) {
+        DispatchQueue.main.async { [weak self] in
+            guard let self = self, let sink = self.statusEventSink else { return }
             
-            print("✅ Microphone capture stopped")
-            result(true)
+            var status: [String: Any] = [
+                "isActive": isActive
+            ]
             
-        } catch {
-            print("Error stopping microphone capture: \(error.localizedDescription)")
-            // Still clean up even on error
-            audioEngine = nil
-            inputNode = nil
-            isCapturing = false
-            result(false)
+            if let deviceName = deviceName {
+                status["deviceName"] = deviceName
+            }
+            
+            sink(status)
         }
     }
     
     private func processAudioBuffer(_ buffer: AVAudioPCMBuffer, outputFormat: AVAudioFormat) {
-        guard let eventSink = eventSink else { return }
-        
         // Convert buffer to target format if needed
         guard let convertedBuffer = convertBuffer(buffer, to: outputFormat) else {
             return
@@ -201,9 +441,17 @@ class MicCapturePlugin: NSObject, FlutterPlugin {
             return
         }
         
-        // Send to Flutter via event channel
+        // Send to Flutter via event channel on main thread
+        // Check eventSink in closure to ensure thread safety
         DispatchQueue.main.async { [weak self] in
-            self?.eventSink?(FlutterStandardTypedData(bytes: audioData))
+            guard let self = self else { return }
+            
+            if let sink = self.eventSink {
+                sink(FlutterStandardTypedData(bytes: audioData))
+            } else {
+                // Log warning if eventSink is not set (stream not subscribed)
+                print("⚠️ Audio data received but eventSink is nil - stream may not be subscribed")
+            }
         }
     }
     
@@ -290,12 +538,41 @@ class MicCapturePlugin: NSObject, FlutterPlugin {
 // MARK: - FlutterStreamHandler
 extension MicCapturePlugin: FlutterStreamHandler {
     func onListen(withArguments arguments: Any?, eventSink events: @escaping FlutterEventSink) -> FlutterError? {
+        print("🎧 Audio stream listener attached")
         self.eventSink = events
         return nil
     }
     
     func onCancel(withArguments arguments: Any?) -> FlutterError? {
+        print("🎧 Audio stream listener cancelled")
         self.eventSink = nil
+        return nil
+    }
+}
+
+// MARK: - Status Stream Handler
+class StatusStreamHandler: NSObject, FlutterStreamHandler {
+    weak var plugin: MicCapturePlugin?
+    
+    init(plugin: MicCapturePlugin) {
+        self.plugin = plugin
+    }
+    
+    func onListen(withArguments arguments: Any?, eventSink events: @escaping FlutterEventSink) -> FlutterError? {
+        plugin?.statusEventSink = events
+        // Send current status immediately
+        let isActive = plugin?.isCapturing ?? false
+        let deviceName = plugin?.currentDeviceName
+        var status: [String: Any] = ["isActive": isActive]
+        if let deviceName = deviceName {
+            status["deviceName"] = deviceName
+        }
+        events(status)
+        return nil
+    }
+    
+    func onCancel(withArguments arguments: Any?) -> FlutterError? {
+        plugin?.statusEventSink = nil
         return nil
     }
 }

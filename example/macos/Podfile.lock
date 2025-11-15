@@ -1,0 +1,22 @@
+PODS:
+  - audio_capture (0.0.1):
+    - FlutterMacOS
+  - FlutterMacOS (1.0.0)
+
+DEPENDENCIES:
+  - audio_capture (from `Flutter/ephemeral/.symlinks/plugins/audio_capture/macos`)
+  - FlutterMacOS (from `Flutter/ephemeral`)
+
+EXTERNAL SOURCES:
+  audio_capture:
+    :path: Flutter/ephemeral/.symlinks/plugins/audio_capture/macos
+  FlutterMacOS:
+    :path: Flutter/ephemeral
+
+SPEC CHECKSUMS:
+  audio_capture: 5c3fb1cd443848636b489eec2fb5a628f9baeb4c
+  FlutterMacOS: d0db08ddef1a9af05a5ec4b724367152bb0500b1
+
+PODFILE CHECKSUM: 89c84cf5c2351c1e554c6dea18d31a879fc3a19e
+
+COCOAPODS: 1.16.2
