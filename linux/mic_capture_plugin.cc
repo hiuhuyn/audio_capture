@@ -214,9 +214,9 @@ bool OpenPulseStreamWithRetry(int sample_rate, int channels, int bits_per_sample
                                pa_simple** out_stream, std::string* error_message) {
   const int max_retries = is_bluetooth ? 5 : 3;
   const double initial_wait = is_bluetooth ? 1.5 : 0.3;
-  const double retry_delays[] = is_bluetooth 
-    ? {0.5, 1.0, 1.5, 2.0, 2.5}
-    : {0.3, 0.6, 1.0, 0.0, 0.0};
+  const double retry_delays_bluetooth[] = {0.5, 1.0, 1.5, 2.0, 2.5};
+  const double retry_delays_normal[] = {0.3, 0.6, 1.0, 0.0, 0.0};
+  const double* retry_delays = is_bluetooth ? retry_delays_bluetooth : retry_delays_normal;
   
   if (is_bluetooth) {
     g_debug("🔵 Bluetooth device detected - using extended wait times");
@@ -685,7 +685,6 @@ bool StopCapture(MicCapturePlugin* plugin) {
 
   // Send status update
   g_mutex_lock(&plugin->lock);
-  const gchar* device_name_cstr = plugin->current_device_name;
   if (plugin->current_device_name != nullptr) {
     g_free(plugin->current_device_name);
     plugin->current_device_name = nullptr;

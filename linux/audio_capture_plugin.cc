@@ -1,4 +1,5 @@
 #include "include/audio_capture/audio_capture_plugin.h"
+#include "include/audio_capture/mic_capture_plugin.h"
 
 #include <flutter_linux/flutter_linux.h>
 #include <glib-object.h>
@@ -640,6 +641,8 @@ static void audio_capture_plugin_init(AudioCapturePlugin* plugin) {
 void audio_capture_plugin_register_with_registrar(FlPluginRegistrar* registrar) {
   FlBinaryMessenger* messenger = fl_plugin_registrar_get_messenger(registrar);
   audio_capture_plugin_register_with_messenger(messenger);
+  // Also register the mic capture plugin
+  mic_capture_plugin_register_with_messenger(messenger);
 }
 
 void audio_capture_plugin_register_with_messenger(FlBinaryMessenger* messenger) {

@@ -4,12 +4,12 @@
 cmake_minimum_required(VERSION 3.10)
 
 # Project-level configuration.
-set(PROJECT_NAME "audio_capture")
+set(PROJECT_NAME "desktop_audio_capture")
 project(${PROJECT_NAME} LANGUAGES CXX)
 
 # This value is used when generating builds using this plugin, so it must
 # not be changed.
-set(PLUGIN_NAME "audio_capture_plugin")
+set(PLUGIN_NAME "desktop_audio_capture_plugin")
 
 # System-level dependencies.
 find_package(PkgConfig REQUIRED)
