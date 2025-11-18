@@ -12,6 +12,9 @@
 #include <atomic>
 #include <vector>
 #include <string>
+// After existing includes, add:
+#include <queue>
+#include <chrono>
 
 // Include Windows headers for WAVEFORMATEX
 #include <mmsystem.h>
@@ -22,6 +25,12 @@ struct IAudioCaptureClient;
 struct IMMDevice;
 
 namespace audio_capture {
+
+struct AudioDataPacket {
+  std::vector<uint8_t> data;
+  double decibel;
+  std::chrono::steady_clock::time_point timestamp;
+};
 
 class MicCapturePlugin : public flutter::Plugin {
  public:
@@ -42,17 +51,23 @@ class MicCapturePlugin : public flutter::Plugin {
   bool StartCapture(const flutter::EncodableMap* args);
   bool StopCapture();
   void CaptureThread();
+  void ProcessQueue();
   double CalculateDecibel(const int16_t* samples, size_t sample_count);
   void ApplyGainBoostAndConvertToMono(const int16_t* input, int16_t* output,
                                      size_t frame_count, int input_channels,
                                      float gain_boost);
+  void ResampleAudio(const int16_t* input, size_t input_frames,
+                     int16_t* output, size_t output_frames,
+                     int input_sample_rate, int output_sample_rate);
   void SendStatusUpdate(bool is_active, const std::string& device_name = "");
   void SendDecibelUpdate(double decibel);
+  void QueueAudioData(std::vector<uint8_t> data, double decibel);
   bool HasInputDevice();
   std::vector<flutter::EncodableValue> GetAvailableInputDevices();
   std::string GetCurrentDeviceName();
   bool IsBluetoothDevice();
   void CleanupExistingCapture();
+  void SetThreadPriority();
   bool OpenWASAPIStreamWithRetry(int sample_rate, int channels, int bits_per_sample,
                                  bool is_bluetooth, void** out_audio_client,
                                  void** out_capture_client, std::string* error_message);
@@ -72,6 +87,11 @@ class MicCapturePlugin : public flutter::Plugin {
   std::atomic<bool> should_stop_;
   std::thread capture_thread_;
   std::string current_device_name_;
+
+  // NEW: Queue cho audio data
+  std::queue<AudioDataPacket> audio_queue_;
+  std::mutex queue_mutex_;
+  static constexpr size_t kMaxQueueSize = 50;  // Limit queue size
   
   // Audio configuration
   int sample_rate_;
