@@ -1,6 +1,6 @@
 name: desktop_audio_capture
 description: "Flutter plugin for capturing audio on desktop platforms (macOS, Linux, Windows). Supports microphone and system audio with streaming, decibel monitoring, and device management."
-version: 0.0.1
+version: 0.0.2
 homepage: https://github.com/hiuhuyn/desktop_audio_capture
 issue_tracker: https://github.com/hiuhuyn/desktop_audio_capture/issues
 repository: https://github.com/hiuhuyn/desktop_audio_capture
