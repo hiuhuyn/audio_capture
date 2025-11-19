@@ -133,4 +133,3 @@ class DecibelDisplay extends StatelessWidget {
     );
   }
 }
-

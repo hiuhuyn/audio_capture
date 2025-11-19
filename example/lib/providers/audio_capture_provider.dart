@@ -10,30 +10,24 @@ class AudioCaptureProvider with ChangeNotifier {
   final SystemAudioCapture _systemCapture = SystemAudioCapture();
   final vad.VadHandler _vadHandler = vad.VadHandler.create(isDebug: true);
 
-
   void _setupVadHandler() {
     _vadHandler.onSpeechStart.listen((_) {
       debugPrint('Speech detected.');
     });
 
-    _vadHandler.onRealSpeechStart.listen((_) {
-      
-    });
+    _vadHandler.onRealSpeechStart.listen((_) {});
 
     _vadHandler.onSpeechEnd.listen((List<double> samples) {
-      debugPrint('Speech ended, first 10 samples: ${samples.take(10).toList()}');
-      
+      debugPrint(
+          'Speech ended, first 10 samples: ${samples.take(10).toList()}');
     });
-
 
     _vadHandler.onVADMisfire.listen((_) {
       debugPrint('VAD misfire detected.');
-      
     });
 
     _vadHandler.onError.listen((String message) {
       debugPrint('Error: $message');
-      
     });
   }
 
@@ -41,7 +35,8 @@ class AudioCaptureProvider with ChangeNotifier {
   bool _micActive = false;
   String? _micDeviceName;
   StreamSubscription<MicAudioStatus>? _micStatusSubscription;
-  StreamSubscription<Uint8List>? _micAudioSubscription; // Keep reference to trigger onListen
+  StreamSubscription<Uint8List>?
+      _micAudioSubscription; // Keep reference to trigger onListen
   StreamSubscription<DecibelData>? _micDecibelSubscription;
   double _micDecibel = -120.0;
   String? _micError;
@@ -49,7 +44,8 @@ class AudioCaptureProvider with ChangeNotifier {
   // System state
   bool _systemActive = false;
   StreamSubscription<SystemAudioStatus>? _systemStatusSubscription;
-  StreamSubscription<Uint8List>? _systemAudioSubscription; // Keep reference to trigger onListen
+  StreamSubscription<Uint8List>?
+      _systemAudioSubscription; // Keep reference to trigger onListen
   StreamSubscription<DecibelData>? _systemDecibelSubscription;
   double _systemDecibel = -120.0;
   String? _systemError;
@@ -101,7 +97,7 @@ class AudioCaptureProvider with ChangeNotifier {
         if (config != null) {
           _micCapture.updateConfig(config);
         }
-                // Setup status listener BEFORE starting capture
+        // Setup status listener BEFORE starting capture
         _micStatusSubscription?.cancel();
         _micStatusSubscription = _micCapture.statusStream?.listen((status) {
           _micActive = status.isActive;
@@ -110,7 +106,7 @@ class AudioCaptureProvider with ChangeNotifier {
         });
 
         await _micCapture.startCapture();
-        
+
         // Subscribe to audio stream AFTER starting capture
         // This ensures eventSink is set on native side so audio data can flow
         // The stream is created in startCapture(), so we can subscribe now
@@ -128,10 +124,10 @@ class AudioCaptureProvider with ChangeNotifier {
             cancelOnError: false,
           );
           _vadHandler.startListening(
-          audioStream: _micCapture.audioStream!,
-        );
+            audioStream: _micCapture.audioStream!,
+          );
         }
-        
+
         // Subscribe to decibel stream
         _micDecibelSubscription?.cancel();
         final micDecibelStream = _micCapture.decibelStream;
@@ -179,13 +175,14 @@ class AudioCaptureProvider with ChangeNotifier {
 
         // Setup status listener BEFORE starting capture
         _systemStatusSubscription?.cancel();
-        _systemStatusSubscription = _systemCapture.statusStream?.listen((status) {
+        _systemStatusSubscription =
+            _systemCapture.statusStream?.listen((status) {
           _systemActive = status.isActive;
           notifyListeners();
         });
 
         await _systemCapture.startCapture();
-        
+
         // Subscribe to audio stream AFTER starting capture
         // This ensures eventSink is set on native side so audio data can flow
         _systemAudioSubscription?.cancel();
@@ -200,7 +197,7 @@ class AudioCaptureProvider with ChangeNotifier {
             cancelOnError: false,
           );
         }
-        
+
         // Subscribe to decibel stream
         _systemDecibelSubscription?.cancel();
         final systemDecibelStream = _systemCapture.decibelStream;
@@ -237,4 +234,3 @@ class AudioCaptureProvider with ChangeNotifier {
     super.dispose();
   }
 }
-

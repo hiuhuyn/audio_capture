@@ -22,14 +22,14 @@ class AudioDataDisplay extends StatefulWidget {
 
 class _AudioDataDisplayState extends State<AudioDataDisplay> {
   StreamSubscription<Uint8List>? _subscription;
-  
+
   // Statistics
   int _totalBytes = 0;
   int _bytesPerSecond = 0;
   double _audioLevel = 0.0; // 0.0 to 1.0
   DateTime? _lastUpdate;
   int _lastBytes = 0;
-  
+
   // Waveform data (last 100 samples)
   final List<double> _waveformData = List.filled(100, 0.0);
   int _waveformIndex = 0;
@@ -48,10 +48,10 @@ class _AudioDataDisplayState extends State<AudioDataDisplay> {
         if (!mounted) return;
 
         final now = DateTime.now();
-        
+
         // Update statistics
         _totalBytes += data.length;
-        
+
         if (_lastUpdate != null) {
           final elapsed = now.difference(_lastUpdate!).inMilliseconds;
           if (elapsed > 0) {
@@ -96,7 +96,7 @@ class _AudioDataDisplayState extends State<AudioDataDisplay> {
       sum += normalized * normalized;
     }
     final rms = (sum / samples.length);
-    
+
     // Convert to dB and normalize to 0.0-1.0
     // RMS to dB: 20 * log10(rms)
     // For display, we'll use a simple square root scaling
@@ -280,7 +280,7 @@ class WaveformPainter extends CustomPainter {
     for (int i = 0; i < data.length; i++) {
       final x = i * stepX;
       final y = size.height / 2 - (data[i] * size.height / 2);
-      
+
       if (i == 0) {
         path.moveTo(x, y);
       } else {
@@ -296,4 +296,3 @@ class WaveformPainter extends CustomPainter {
     return oldDelegate.data != data;
   }
 }
-

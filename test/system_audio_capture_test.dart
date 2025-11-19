@@ -80,7 +80,8 @@ void main() {
 
     test('requestPermissions fails', () async {
       TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
-          .setMockMethodCallHandler(methodChannel, (MethodCall methodCall) async {
+          .setMockMethodCallHandler(methodChannel,
+              (MethodCall methodCall) async {
         if (methodCall.method == 'requestPermissions') {
           return false;
         }
@@ -126,7 +127,8 @@ void main() {
 
     test('startCapture throws exception when permission denied', () async {
       TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
-          .setMockMethodCallHandler(methodChannel, (MethodCall methodCall) async {
+          .setMockMethodCallHandler(methodChannel,
+              (MethodCall methodCall) async {
         if (methodCall.method == 'requestPermissions') {
           return false;
         }
@@ -141,7 +143,8 @@ void main() {
 
     test('startCapture throws exception when start fails', () async {
       TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
-          .setMockMethodCallHandler(methodChannel, (MethodCall methodCall) async {
+          .setMockMethodCallHandler(methodChannel,
+              (MethodCall methodCall) async {
         if (methodCall.method == 'requestPermissions') {
           return true;
         }
@@ -175,7 +178,8 @@ void main() {
     test('stopCapture throws exception when stop fails', () async {
       await systemCapture.startCapture();
       TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
-          .setMockMethodCallHandler(methodChannel, (MethodCall methodCall) async {
+          .setMockMethodCallHandler(methodChannel,
+              (MethodCall methodCall) async {
         if (methodCall.method == 'stopCapture') {
           return false;
         }
@@ -212,4 +216,3 @@ void main() {
     });
   });
 }
-

@@ -54,7 +54,8 @@ class AudioCaptureHome extends StatelessWidget {
     final captureProvider = context.read<AudioCaptureProvider>();
     final settingsProvider = context.read<SettingsProvider>();
     try {
-      await captureProvider.toggleSystem(config: settingsProvider.getSystemConfig());
+      await captureProvider.toggleSystem(
+          config: settingsProvider.getSystemConfig());
     } catch (e) {
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -80,7 +81,7 @@ class AudioCaptureHome extends StatelessWidget {
     try {
       // Check if device is available
       final hasDevice = await micCapture.hasInputDevice();
-      
+
       // Get available devices
       final devices = await micCapture.getAvailableInputDevices();
 
@@ -246,7 +247,8 @@ class AudioCaptureHome extends StatelessWidget {
                                   : 'Status: Active')
                               : 'Status: Inactive',
                           style: TextStyle(
-                            color: provider.micActive ? Colors.green : Colors.grey,
+                            color:
+                                provider.micActive ? Colors.green : Colors.grey,
                             fontSize: 14,
                           ),
                         ),
@@ -310,9 +312,13 @@ class AudioCaptureHome extends StatelessWidget {
                         ),
                         const SizedBox(height: 8),
                         Text(
-                          provider.systemActive ? 'Status: Active' : 'Status: Inactive',
+                          provider.systemActive
+                              ? 'Status: Active'
+                              : 'Status: Inactive',
                           style: TextStyle(
-                            color: provider.systemActive ? Colors.green : Colors.grey,
+                            color: provider.systemActive
+                                ? Colors.green
+                                : Colors.grey,
                             fontSize: 14,
                           ),
                         ),
@@ -464,7 +470,8 @@ class MicSettingsTab extends StatelessWidget {
                     settingsProvider.setMicChannels(value.toInt());
                   },
                 ),
-                Text('Current: ${settingsProvider.micChannels == 1 ? "Mono" : "Stereo"}'),
+                Text(
+                    'Current: ${settingsProvider.micChannels == 1 ? "Mono" : "Stereo"}'),
               ],
             ),
           ),
@@ -490,7 +497,8 @@ class MicSettingsTab extends StatelessWidget {
                     settingsProvider.setMicGainBoost(value);
                   },
                 ),
-                Text('Current: ${settingsProvider.micGainBoost.toStringAsFixed(1)}x'),
+                Text(
+                    'Current: ${settingsProvider.micGainBoost.toStringAsFixed(1)}x'),
               ],
             ),
           ),
@@ -516,7 +524,8 @@ class MicSettingsTab extends StatelessWidget {
                     settingsProvider.setMicInputVolume(value);
                   },
                 ),
-                Text('Current: ${(settingsProvider.micInputVolume * 100).toStringAsFixed(0)}%'),
+                Text(
+                    'Current: ${(settingsProvider.micInputVolume * 100).toStringAsFixed(0)}%'),
               ],
             ),
           ),
@@ -524,7 +533,8 @@ class MicSettingsTab extends StatelessWidget {
         const SizedBox(height: 24),
         ElevatedButton(
           onPressed: () {
-            captureProvider.micCapture.updateConfig(settingsProvider.getMicConfig());
+            captureProvider.micCapture
+                .updateConfig(settingsProvider.getMicConfig());
             ScaffoldMessenger.of(context).showSnackBar(
               const SnackBar(content: Text('Mic settings saved')),
             );
@@ -588,12 +598,14 @@ class SystemSettingsTab extends StatelessWidget {
                   min: 1,
                   max: 2,
                   divisions: 1,
-                  label: settingsProvider.systemChannels == 1 ? 'Mono' : 'Stereo',
+                  label:
+                      settingsProvider.systemChannels == 1 ? 'Mono' : 'Stereo',
                   onChanged: (value) {
                     settingsProvider.setSystemChannels(value.toInt());
                   },
                 ),
-                Text('Current: ${settingsProvider.systemChannels == 1 ? "Mono" : "Stereo"}'),
+                Text(
+                    'Current: ${settingsProvider.systemChannels == 1 ? "Mono" : "Stereo"}'),
               ],
             ),
           ),
@@ -601,7 +613,8 @@ class SystemSettingsTab extends StatelessWidget {
         const SizedBox(height: 24),
         ElevatedButton(
           onPressed: () {
-            captureProvider.systemCapture.updateConfig(settingsProvider.getSystemConfig());
+            captureProvider.systemCapture
+                .updateConfig(settingsProvider.getSystemConfig());
             ScaffoldMessenger.of(context).showSnackBar(
               const SnackBar(content: Text('System audio settings saved')),
             );
