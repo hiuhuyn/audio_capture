@@ -8,7 +8,6 @@ class AudioCaptureProvider with ChangeNotifier {
   final MicAudioCapture _micCapture = MicAudioCapture();
   final SystemAudioCapture _systemCapture = SystemAudioCapture();
 
-  
   // Mic state
   bool _micActive = false;
   String? _micDeviceName;
